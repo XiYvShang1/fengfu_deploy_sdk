@@ -693,6 +693,8 @@ int main() {
 | `remaining_ms` | 当前远程速度剩余时间 |
 | `applied_vx/vy/wz` | 当前由远程端持有并送入 FSM 前端的速度目标 |
 
+`timestamp_ns` 和电机反馈时间戳使用机器狗端单调时钟，单位为纳秒，从系统启动后开始累计，不是 Unix 日期时间。控制台同时输出 `server_uptime`、`feedback_uptime` 和反馈年龄，便于人工查看。
+
 ### 9.1 FSM 模式
 
 | 数值 | 名称 | 说明 |

@@ -99,6 +99,19 @@ static int64_t timestamp_age_ns(int64_t packet_timestamp_ns,
     return packet_timestamp_ns - sample_timestamp_ns;
 }
 
+static void print_uptime_ns(const char* name, int64_t timestamp_ns) {
+    if (timestamp_ns < 0) {
+        printf("%s=unknown ", name);
+        return;
+    }
+    const int64_t total_ms = timestamp_ns / 1000000;
+    const int64_t hours = total_ms / 3600000;
+    const int64_t minutes = (total_ms / 60000) % 60;
+    const double seconds = (double)(total_ms % 60000) / 1000.0;
+    printf("%s=%lldh%02lldm%06.3fs ", name, (long long)hours,
+           (long long)minutes, seconds);
+}
+
 static int print_state(void) {
     FF_LocoState state;
     const int result = ff_loco_recv_state(&state, 1000);
@@ -106,8 +119,9 @@ static int print_state(void) {
         fprintf(stderr, "获取状态失败：%s\n", ff_loco_strerror(result));
         return result;
     }
-    printf("timestamp_ns=%lld ack_seq=%u client_connected=%u\n",
-           (long long)state.timestamp_ns, state.acknowledged_seq,
+    printf("timestamp_ns=%lld ", (long long)state.timestamp_ns);
+    print_uptime_ns("server_uptime", state.timestamp_ns);
+    printf("ack_seq=%u client_connected=%u\n", state.acknowledged_seq,
            state.client_connected);
     printf("health=%s motor_init=%s mode=%s rl_enabled=%u "
            "remote_active=%s remaining_ms=%u velocity=[%.3f %.3f %.3f] "
@@ -146,9 +160,11 @@ static int print_motor_state(void) {
         fprintf(stderr, "获取电机状态失败：%s\n", ff_loco_strerror(result));
         return result;
     }
-    printf("state_valid=%u sequence=%lld timestamp_ns=%lld\n",
+    printf("state_valid=%u sequence=%lld timestamp_ns=%lld ",
            state.state_valid, (long long)state.sequence_id,
            (long long)state.timestamp_ns);
+    print_uptime_ns("server_uptime", state.timestamp_ns);
+    printf("\n");
     printf("control_mode=%s command_fresh=%u ",
            ff_loco_control_mode_string(state.active_control_mode),
            state.command_fresh);
@@ -163,6 +179,8 @@ static int print_motor_state(void) {
                state.temperature_c[i], error_en(state.error_code[i]),
                state.motor_valid[i], state.foot_force_raw[i],
                (long long)state.motor_feedback_timestamp_ns[i]);
+        print_uptime_ns("feedback_uptime",
+                        state.motor_feedback_timestamp_ns[i]);
         print_age_ns("feedback_age",
                      timestamp_age_ns(state.timestamp_ns,
                                       state.motor_feedback_timestamp_ns[i]));
