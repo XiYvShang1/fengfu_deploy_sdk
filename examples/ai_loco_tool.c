@@ -90,6 +90,15 @@ static void print_counter(const char* name, int64_t value) {
     }
 }
 
+static int64_t timestamp_age_ns(int64_t packet_timestamp_ns,
+                                int64_t sample_timestamp_ns) {
+    if (packet_timestamp_ns <= 0 || sample_timestamp_ns <= 0 ||
+        sample_timestamp_ns > packet_timestamp_ns) {
+        return -1;
+    }
+    return packet_timestamp_ns - sample_timestamp_ns;
+}
+
 static int print_state(void) {
     FF_LocoState state;
     const int result = ff_loco_recv_state(&state, 1000);
@@ -97,16 +106,21 @@ static int print_state(void) {
         fprintf(stderr, "获取状态失败：%s\n", ff_loco_strerror(result));
         return result;
     }
+    printf("timestamp_ns=%lld ack_seq=%u client_connected=%u\n",
+           (long long)state.timestamp_ns, state.acknowledged_seq,
+           state.client_connected);
     printf("health=%s motor_init=%s mode=%s rl_enabled=%u "
            "remote_active=%s remaining_ms=%u velocity=[%.3f %.3f %.3f] "
-           "last_cmd=%s\n",
+           "last_cmd=%s reject_reason=%s fault_motor_id=%d\n",
            health_en(state.runtime_health),
            state.runtime_health == FF_RUNTIME_READY ? "passed_12/12" : "not_passed",
            mode_en(state.current_mode), state.hardware_rl_enabled,
            state.remote_command_active ? "active" : "idle",
            state.remaining_ms,
            state.applied_vx, state.applied_vy, state.applied_wz,
-           state.accepted ? "accepted" : "rejected");
+           state.accepted ? "accepted" : "rejected",
+           ff_loco_reject_reason_string(state.reject_reason),
+           (int)state.fault_motor_id);
     if (state.runtime_health == FF_RUNTIME_INITIALIZING) {
         fprintf(stderr,
                 "\n【初始化中】机器狗正在完成电机、IMU和FSM初始化。\n"
@@ -132,8 +146,9 @@ static int print_motor_state(void) {
         fprintf(stderr, "获取电机状态失败：%s\n", ff_loco_strerror(result));
         return result;
     }
-    printf("state_valid=%u sequence=%lld\n", state.state_valid,
-           (long long)state.sequence_id);
+    printf("state_valid=%u sequence=%lld timestamp_ns=%lld\n",
+           state.state_valid, (long long)state.sequence_id,
+           (long long)state.timestamp_ns);
     printf("control_mode=%s command_fresh=%u ",
            ff_loco_control_mode_string(state.active_control_mode),
            state.command_fresh);
@@ -143,10 +158,15 @@ static int print_motor_state(void) {
            ff_loco_safety_reason_string(state.safety_reason_code));
     for (int i = 0; i < FF_MOTOR_COUNT; ++i) {
         printf("M%02d %-8s q=%+.4f dq=%+.4f tau=%+.3f temp=%.0fC err=%s "
-               "valid=%u force=%d\n",
+               "valid=%u force=%d feedback_timestamp_ns=%lld ",
                i, motor_name_en(i), state.q[i], state.dq[i], state.tau[i],
                state.temperature_c[i], error_en(state.error_code[i]),
-               state.motor_valid[i], state.foot_force_raw[i]);
+               state.motor_valid[i], state.foot_force_raw[i],
+               (long long)state.motor_feedback_timestamp_ns[i]);
+        print_age_ns("feedback_age",
+                     timestamp_age_ns(state.timestamp_ns,
+                                      state.motor_feedback_timestamp_ns[i]));
+        printf("\n");
     }
     printf("\nport_diagnostics (3 motors per port):\n");
     for (int port = 0; port < FF_PORT_COUNT; ++port) {
